@@ -1,35 +1,57 @@
 # rust-test
 
-TODO:
-- I'm using decimal, but for this exercise maybe scaled i64 should be good enough and faster;
-- I created and I'm using `TransactionsRegistry` to keep track of the transactions, but it's unbounded, meaning it can grow indefinitely. In a real-world scenario, we would need to implement some kind of cleanup or archiving mechanism to prevent unbounded growth and potential memory issues.
-- I'm using `cargo llvm-cov` to check the code coverage so it can help me to easily identify untested parts of the code and easily create new tests to cover them
+A small transaction engine that reads CSV input, processes account operations, and writes final account balances to stdout.
 
+## Design
+
+### Separation of concerns
+- CSV parsing is separated from engine logic.
+- Parsed input is converted into domain transactions before processing.
+- The engine is responsible only for business rules and account state transitions.
+
+### Core components
+- `engine.rs`: transaction processing rules (`deposit`, `withdrawal`, `dispute`, `resolve`, `chargeback`);
+- `transactions_registry.rs`: stores applied transactions by `tx` for dispute lifecycle handling;
+- `account.rs`: account state (`available`, `held`, `locked`) and `total()` computation.
 
 ## Assumptions and behavior choices
 
-This implementation follows the spec and makes the following explicit choices:
+- Accounts are auto-created when a transaction references an unknown client;
+- Transaction IDs are globally unique; duplicate `tx` values are ignored;
+- Only **deposits** are disputable in this implementation;
+- A transaction can only be disputed once in its lifecycle;
+- After chargeback, the account is locked.
+  - On locked accounts:
+    - `deposit` and `withdrawal` are ignored (`AccountLocked`).
+    - `dispute`, `resolve`, and `chargeback` are still processed when otherwise valid.
+  - Rationale: lock blocks normal account movement, while dispute lifecycle operations may still complete for already-recorded transactions.
+- Business-invalid operations return `TransactionOutcome::Ignored(...)`;
+- Invariant/system failures return errors (`EngineError`).
 
-### Account creation
-- If a transaction references a client that does not exist yet, a new account record is created automatically.
-- This applies before processing each transaction type.
+## Correctness
 
-### Duplicate transaction IDs
-- Transaction IDs are treated as globally unique across all transaction types.
-- Reusing a `tx` ID is ignored as `TransactionDuplicated`.
+- Unit tests cover the important business logic and edge cases;
+- `cargo llvm-cov` was used to validate path coverage and identify untested branches;
+- Coverage is near 100% for:
+  - `engine.rs`
+  - `transactions_registry.rs`
+  - `account.rs`
 
-### Dispute scope
-- Only **deposit** transactions are disputable.
-- Given the spec's wording, disputing a non-deposit transaction is ignored as `NotDisputableType`.
-- A transaction can only be disputed once, otherwise promotes abuse and is ignored as `TransactionAlreadyDisputed`.
+## Safety and robustness
 
-### Locked (frozen) account behavior
-- After a successful chargeback, the account is locked (`is_locked = true`).
-- On locked accounts:
-  - `deposit` and `withdrawal` are ignored (`AccountLocked`).
-  - `dispute`, `resolve`, and `chargeback` are still processed when otherwise valid.
-- Rationale: lock blocks normal account movement, while dispute lifecycle operations may still complete for already-recorded transactions.
+- Checked arithmetic is used (`checked_add`, `checked_sub`) to avoid silent overflow/underflow;
+- Edge cases are handled explicitly (insufficient funds, missing tx, wrong client, invalid dispute state, duplicates, locked account);
+- Error handling distinguishes:
+  - expected business rejections
+  - unexpected engine/invariant errors
 
-### Ignored vs error
-- Business-invalid operations return `TransactionOutcome::Ignored(...)` (e.g., insufficient funds, tx not found, wrong client, not disputed).
-- Hard failures (unexpected invariant breaks) return errors.
+## Efficiency notes
+
+- Uses `rust_decimal` to avoid floating-point precision issues;
+- Uses `FxHashMap` for faster hashing given that the input is trusted;
+- Streaming CSV processing avoids loading all rows into memory at once.
+
+## Known limitations / future improvements
+
+- `TransactionsRegistry` is currently unbounded and can grow indefinitely. A production version should add retention/archival (e.g., bounded cache + persistent store);
+- A scaled-integer representation (e.g., fixed 4-decimal `i64`) could improve performance, but was not chosen here for readability and maintainability;
