@@ -10,4 +10,10 @@ pub enum EngineError {
 
     #[error("Withdrawal underflow")]
     WithdrawalUnderflow,
+
+    #[error("Dispute underflow")]
+    DisputeUnderflow,
+
+    #[error("Dispute overflow")]
+    DisputeOverflow,
 }

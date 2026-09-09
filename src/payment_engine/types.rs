@@ -35,4 +35,9 @@ pub enum IgnoreReason {
     AccountLocked,
     InsufficientFunds,
     TransactionDuplicated,
+    TransactionNotFound,
+    TransactionAlreadyDisputed,
+    TransactionNotInDispute,
+    WrongClient,
+    NotDisputableType,
 }

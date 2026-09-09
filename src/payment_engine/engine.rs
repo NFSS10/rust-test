@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use super::account::Account;
 use super::errors::EngineError;
-use super::transactions_registry::{TransactionType as RegistryTxType, TransactionsRegistry};
+use super::transactions_registry::{DisputeState, TransactionType as RegistryTxType, TransactionsRegistry};
 use super::types::{ClientId, IgnoreReason, TransactionId, TransactionOutcome, TransactionRecord};
 
 pub struct PaymentsEngine {
@@ -97,20 +97,90 @@ impl PaymentsEngine {
     }
 
     fn dispute(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<TransactionOutcome> {
-        // TODO: implement
-        println!("Dispute: client_id={:?}, tx_id={:?}", client_id, tx_id);
+        // can't dispute a transaction that wasn't registered for this client
+        let transaction = match self.transactions_registry.get_mut(tx_id) {
+            Some(t) => t,
+            None => return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionNotFound)),
+        };
+
+        if transaction.client_id != client_id {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::WrongClient));
+        }
+
+        // ASSUMPTION: disputing a transaction that was already resolved makes sense (i.e. dispute -> resolve -> dispute again)
+        // so no need for extra states here
+        if transaction.state == DisputeState::Disputed {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionAlreadyDisputed));
+        }
+        if transaction.state == DisputeState::ChargedBack {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionNotInDispute));
+        }
+
+        // ASSUMPTION: only deposits are disputable in this toy engine??? TODO: revisit this???
+        if transaction.transaction_type != RegistryTxType::Deposit {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::NotDisputableType));
+        }
+
+        let account = self.accounts.get_mut(&client_id).ok_or(EngineError::MissingAccountAfterEnsure)?;
+
+        let new_available = account.available.checked_sub(transaction.amount).ok_or(EngineError::DisputeUnderflow)?;
+        let new_held = account.held.checked_add(transaction.amount).ok_or(EngineError::DisputeOverflow)?;
+
+        account.available = new_available;
+        account.held = new_held;
+        transaction.state = DisputeState::Disputed;
+
         Ok(TransactionOutcome::Applied)
     }
 
     fn resolve(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<TransactionOutcome> {
-        // TODO: implement
-        println!("Resolve: client_id={:?}, tx_id={:?}", client_id, tx_id);
+        // can't resolve a transaction that wasn't registered for this client
+        let transaction = match self.transactions_registry.get_mut(tx_id) {
+            Some(t) => t,
+            None => return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionNotFound)),
+        };
+
+        if transaction.client_id != client_id {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::WrongClient));
+        }
+        if transaction.state != DisputeState::Disputed {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionNotInDispute));
+        }
+
+        let account = self.accounts.get_mut(&client_id).ok_or(EngineError::MissingAccountAfterEnsure)?;
+
+        let new_held = account.held.checked_sub(transaction.amount).ok_or(EngineError::DisputeUnderflow)?;
+        let new_available = account.available.checked_add(transaction.amount).ok_or(EngineError::DisputeOverflow)?;
+
+        account.held = new_held;
+        account.available = new_available;
+        transaction.state = DisputeState::None;
+
         Ok(TransactionOutcome::Applied)
     }
 
     fn chargeback(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<TransactionOutcome> {
-        // TODO: implement
-        println!("Chargeback: client_id={:?}, tx_id={:?}", client_id, tx_id);
+        // can't chargeback a transaction that wasn't registered for this client
+        let transaction = match self.transactions_registry.get_mut(tx_id) {
+            Some(t) => t,
+            None => return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionNotFound)),
+        };
+
+        if transaction.client_id != client_id {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::WrongClient));
+        }
+        if transaction.state != DisputeState::Disputed {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionNotInDispute));
+        }
+
+        let account = self.accounts.get_mut(&client_id).ok_or(EngineError::MissingAccountAfterEnsure)?;
+
+        let new_held = account.held.checked_sub(transaction.amount).ok_or(EngineError::DisputeUnderflow)?;
+
+        account.is_locked = true;
+        account.held = new_held;
+        transaction.state = DisputeState::ChargedBack;
+
         Ok(TransactionOutcome::Applied)
     }
 
