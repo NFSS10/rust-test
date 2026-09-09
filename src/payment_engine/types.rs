@@ -33,4 +33,5 @@ pub enum TransactionOutcome {
 pub enum IgnoreReason {
     NonPositiveAmount,
     InsufficientFunds,
+    TransactionDuplicated,
 }

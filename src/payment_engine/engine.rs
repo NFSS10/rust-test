@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use super::account::Account;
 use super::errors::EngineError;
-use super::transactions_registry::TransactionsRegistry;
+use super::transactions_registry::{TransactionType as RegistryTxType, TransactionsRegistry};
 use super::types::{ClientId, IgnoreReason, TransactionId, TransactionOutcome, TransactionRecord};
 
 pub struct PaymentsEngine {
@@ -49,10 +49,14 @@ impl PaymentsEngine {
 
         let account = self.accounts.get_mut(&client_id).ok_or(EngineError::MissingAccountAfterEnsure)?;
 
+        // register the transaction in the registry (ignore duplicated transactions)
+        let inserted = self.transactions_registry.insert(RegistryTxType::Deposit, tx_id, client_id, amount);
+        if !inserted {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionDuplicated));
+        }
+
         let new_amount = account.available.checked_add(amount).ok_or(EngineError::DepositOverflow)?;
         account.available = new_amount;
-
-        // TODO: register transaction so it can be disputed later?
 
         Ok(TransactionOutcome::Applied)
     }
@@ -70,10 +74,14 @@ impl PaymentsEngine {
             return Ok(TransactionOutcome::Ignored(IgnoreReason::InsufficientFunds));
         }
 
+        // register the transaction in the registry (ignore duplicated transactions)
+        let inserted = self.transactions_registry.insert(RegistryTxType::Withdrawal, tx_id, client_id, amount);
+        if !inserted {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionDuplicated));
+        }
+
         let new_amount = account.available.checked_sub(amount).ok_or(EngineError::WithdrawalUnderflow)?;
         account.available = new_amount;
-
-        // TODO: register transaction so it can be disputed later?
 
         Ok(TransactionOutcome::Applied)
     }
