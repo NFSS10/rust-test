@@ -283,6 +283,7 @@ mod tests {
 
         assert_eq!(outcome, TransactionOutcome::Applied);
         assert_eq!(engine.accounts.get(&1).unwrap().available, d("3.5"));
+        assert_eq!(engine.accounts.get(&1).unwrap().total(), d("3.5"));
     }
 
     #[test]
@@ -434,6 +435,7 @@ mod tests {
         let account = engine.accounts.get(&1).unwrap();
         assert_eq!(account.available, d("0.0"));
         assert_eq!(account.held, d("3.5"));
+        assert_eq!(account.total(), d("3.5"))
     }
 
     #[test]
@@ -512,6 +514,7 @@ mod tests {
         let account = engine.accounts.get(&1).unwrap();
         assert_eq!(account.available, d("2.0"));
         assert_eq!(account.held, d("0.0"));
+        assert_eq!(account.total(), d("2.0"));
     }
 
     #[test]
@@ -592,6 +595,7 @@ mod tests {
         let account = engine.accounts.get(&1).unwrap();
         assert_eq!(account.held, d("0.0"));
         assert!(account.is_locked);
+        assert_eq!(account.total(), d("0.0"));
 
         let tx = engine.transactions_registry.get(1).unwrap();
         assert_eq!(tx.state, DisputeState::ChargedBack);
