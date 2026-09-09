@@ -79,15 +79,15 @@ impl PaymentsEngine {
             return Ok(TransactionOutcome::Ignored(IgnoreReason::AccountLocked));
         }
 
-        // no sufficient funds to withdraw
-        if account.available < amount {
-            return Ok(TransactionOutcome::Ignored(IgnoreReason::InsufficientFunds));
-        }
-
         // register the transaction in the registry (ignore duplicated transactions)
         let inserted = self.transactions_registry.insert(RegistryTxType::Withdrawal, tx_id, client_id, amount);
         if !inserted {
             return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionDuplicated));
+        }
+
+        // no sufficient funds to withdraw
+        if account.available < amount {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::InsufficientFunds));
         }
 
         let new_amount = account.available.checked_sub(amount).ok_or(EngineError::WithdrawalUnderflow)?;
