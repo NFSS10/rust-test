@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum EngineError {
     #[error("Unexpected: account missing after `ensure_account()`")]
     MissingAccountAfterEnsure,

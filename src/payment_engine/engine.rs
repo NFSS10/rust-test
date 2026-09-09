@@ -118,3 +118,178 @@ impl PaymentsEngine {
         self.accounts.entry(client_id).or_insert_with(Account::new);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn d(v: &str) -> Decimal {
+        Decimal::from_str(v).unwrap()
+    }
+
+    #[test]
+    fn deposit_applies_for_valid_amount() {
+        let mut engine = PaymentsEngine::new();
+
+        let outcome = engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("1.5000") })
+            .unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Applied);
+        assert_eq!(engine.accounts.get(&1).unwrap().available, d("1.5000"));
+    }
+
+    #[test]
+    fn deposit_ignores_non_positive_amount() {
+        let mut engine = PaymentsEngine::new();
+
+        let zero = engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: Decimal::ZERO })
+            .unwrap();
+
+        let negative = engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 2, amount: d("-1.0") })
+            .unwrap();
+
+        assert_eq!(zero, TransactionOutcome::Ignored(IgnoreReason::NonPositiveAmount));
+        assert_eq!(negative, TransactionOutcome::Ignored(IgnoreReason::NonPositiveAmount));
+        assert_eq!(engine.accounts.get(&1).unwrap().available, Decimal::ZERO);
+    }
+
+    #[test]
+    fn deposit_ignores_when_account_is_locked() {
+        let mut engine = PaymentsEngine::new();
+        engine.ensure_account(1);
+        engine.accounts.get_mut(&1).unwrap().is_locked = true;
+
+        let outcome = engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("10.0") })
+            .unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::AccountLocked));
+        assert_eq!(engine.accounts.get(&1).unwrap().available, Decimal::ZERO);
+    }
+
+    #[test]
+    fn deposit_ignores_duplicate_transaction_id() {
+        let mut engine = PaymentsEngine::new();
+
+        let first = engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 100, amount: d("2.0") })
+            .unwrap();
+
+        let duplicate = engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 100, amount: d("3.0") })
+            .unwrap();
+
+        assert_eq!(first, TransactionOutcome::Applied);
+        assert_eq!(duplicate, TransactionOutcome::Ignored(IgnoreReason::TransactionDuplicated));
+        assert_eq!(engine.accounts.get(&1).unwrap().available, d("2.0"));
+    }
+
+    #[test]
+    fn deposit_returns_error_on_overflow() {
+        let mut engine = PaymentsEngine::new();
+        engine.ensure_account(1);
+        engine.accounts.get_mut(&1).unwrap().available = Decimal::MAX;
+
+        let err = engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: Decimal::ONE })
+            .unwrap_err();
+
+        let engine_err = err.downcast_ref::<EngineError>().unwrap();
+        assert_eq!(*engine_err, EngineError::DepositOverflow);
+    }
+
+    #[test]
+    fn withdrawal_applies_for_valid_amount() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("5.0") })
+            .unwrap();
+
+        let outcome = engine
+            .process_transaction(TransactionRecord::Withdrawal { client_id: 1, transaction_id: 2, amount: d("1.5") })
+            .unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Applied);
+        assert_eq!(engine.accounts.get(&1).unwrap().available, d("3.5"));
+    }
+
+    #[test]
+    fn withdrawal_ignores_non_positive_amount() {
+        let mut engine = PaymentsEngine::new();
+
+        let zero = engine
+            .process_transaction(TransactionRecord::Withdrawal {
+                client_id: 1,
+                transaction_id: 1,
+                amount: Decimal::ZERO,
+            })
+            .unwrap();
+
+        let negative = engine
+            .process_transaction(TransactionRecord::Withdrawal { client_id: 1, transaction_id: 2, amount: d("-1.0") })
+            .unwrap();
+
+        assert_eq!(zero, TransactionOutcome::Ignored(IgnoreReason::NonPositiveAmount));
+        assert_eq!(negative, TransactionOutcome::Ignored(IgnoreReason::NonPositiveAmount));
+    }
+
+    #[test]
+    fn withdrawal_ignores_when_account_is_locked() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("5.0") })
+            .unwrap();
+
+        engine.accounts.get_mut(&1).unwrap().is_locked = true;
+
+        let outcome = engine
+            .process_transaction(TransactionRecord::Withdrawal { client_id: 1, transaction_id: 2, amount: d("1.0") })
+            .unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::AccountLocked));
+        assert_eq!(engine.accounts.get(&1).unwrap().available, d("5.0"));
+    }
+
+    #[test]
+    fn withdrawal_ignores_insufficient_funds() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("1.0") })
+            .unwrap();
+
+        let outcome = engine
+            .process_transaction(TransactionRecord::Withdrawal { client_id: 1, transaction_id: 2, amount: d("2.0") })
+            .unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::InsufficientFunds));
+        assert_eq!(engine.accounts.get(&1).unwrap().available, d("1.0"));
+    }
+
+    #[test]
+    fn withdrawal_ignores_duplicate_transaction_id() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("10.0") })
+            .unwrap();
+
+        let first = engine
+            .process_transaction(TransactionRecord::Withdrawal { client_id: 1, transaction_id: 2, amount: d("1.0") })
+            .unwrap();
+
+        let duplicate = engine
+            .process_transaction(TransactionRecord::Withdrawal { client_id: 1, transaction_id: 2, amount: d("1.0") })
+            .unwrap();
+
+        assert_eq!(first, TransactionOutcome::Applied);
+        assert_eq!(duplicate, TransactionOutcome::Ignored(IgnoreReason::TransactionDuplicated));
+        assert_eq!(engine.accounts.get(&1).unwrap().available, d("9.0"));
+    }
+}
