@@ -170,7 +170,7 @@ impl PaymentsEngine {
 
         account.held = new_held;
         account.available = new_available;
-        transaction.state = DisputeState::None;
+        transaction.state = DisputeState::Resolved;
 
         Ok(TransactionOutcome::Applied)
     }
