@@ -2,6 +2,19 @@
 
 A small transaction engine that reads CSV input, processes account operations, and writes final account balances to stdout.
 
+
+## Table of Contents
+
+- [Design](#design)
+  - [Separation of concerns](#separation-of-concerns)
+  - [Core components](#core-components)
+- [Assumptions and behavior choices](#assumptions-and-behavior-choices)
+- [Correctness](#correctness)
+- [Safety and robustness](#safety-and-robustness)
+- [Efficiency notes](#efficiency-notes)
+- [Known limitations / future improvements](#known-limitations--future-improvements)
+
+
 ## Design
 
 ### Separation of concerns
@@ -13,6 +26,7 @@ A small transaction engine that reads CSV input, processes account operations, a
 - `engine.rs`: transaction processing rules (`deposit`, `withdrawal`, `dispute`, `resolve`, `chargeback`);
 - `transactions_registry.rs`: stores applied transactions by `tx` for dispute lifecycle handling;
 - `account.rs`: account state (`available`, `held`, `locked`) and `total()` computation.
+
 
 ## Assumptions and behavior choices
 
@@ -28,6 +42,7 @@ A small transaction engine that reads CSV input, processes account operations, a
 - Business-invalid operations return `TransactionOutcome::Ignored(...)`;
 - Invariant/system failures return errors (`EngineError`).
 
+
 ## Correctness
 
 - Unit tests cover the important business logic and edge cases;
@@ -37,6 +52,7 @@ A small transaction engine that reads CSV input, processes account operations, a
   - `transactions_registry.rs`
   - `account.rs`
 
+
 ## Safety and robustness
 
 - Checked arithmetic is used (`checked_add`, `checked_sub`) to avoid silent overflow/underflow;
@@ -45,11 +61,13 @@ A small transaction engine that reads CSV input, processes account operations, a
   - expected business rejections
   - unexpected engine/invariant errors
 
+
 ## Efficiency notes
 
 - Uses `rust_decimal` to avoid floating-point precision issues;
 - Uses `FxHashMap` for faster hashing given that the input is trusted;
 - Streaming CSV processing avoids loading all rows into memory at once.
+
 
 ## Known limitations / future improvements
 
