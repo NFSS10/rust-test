@@ -107,16 +107,13 @@ impl PaymentsEngine {
             return Ok(TransactionOutcome::Ignored(IgnoreReason::WrongClient));
         }
 
-        // ASSUMPTION: disputing a transaction that was already resolved makes sense (i.e. dispute -> resolve -> dispute again)
-        // so no need for extra states here
-        if transaction.state == DisputeState::Disputed {
+        // only allow disputes on transactions that are in a clean state
+        // (not already disputed, resolved, or charged back)
+        if transaction.state != DisputeState::None {
             return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionAlreadyDisputed));
         }
-        if transaction.state == DisputeState::ChargedBack {
-            return Ok(TransactionOutcome::Ignored(IgnoreReason::TransactionNotInDispute));
-        }
 
-        // ASSUMPTION: only deposits are disputable in this toy engine??? TODO: revisit this???
+        // ASSUMPTION: only deposits are disputable in this toy engine
         if transaction.transaction_type != RegistryTxType::Deposit {
             return Ok(TransactionOutcome::Ignored(IgnoreReason::NotDisputableType));
         }

@@ -18,6 +18,7 @@ pub enum TransactionType {
 pub enum DisputeState {
     None,
     Disputed,
+    Resolved,
     ChargedBack,
 }
 
