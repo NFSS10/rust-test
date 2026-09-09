@@ -49,6 +49,11 @@ impl PaymentsEngine {
 
         let account = self.accounts.get_mut(&client_id).ok_or(EngineError::MissingAccountAfterEnsure)?;
 
+        // don't allow deposits to locked accounts
+        if account.is_locked {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::AccountLocked));
+        }
+
         // register the transaction in the registry (ignore duplicated transactions)
         let inserted = self.transactions_registry.insert(RegistryTxType::Deposit, tx_id, client_id, amount);
         if !inserted {
@@ -68,6 +73,11 @@ impl PaymentsEngine {
         }
 
         let account = self.accounts.get_mut(&client_id).ok_or(EngineError::MissingAccountAfterEnsure)?;
+
+        // don't allow withdrawals from locked accounts
+        if account.is_locked {
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::AccountLocked));
+        }
 
         // no sufficient funds to withdraw
         if account.available < amount {

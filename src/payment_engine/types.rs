@@ -32,6 +32,7 @@ pub enum TransactionOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IgnoreReason {
     NonPositiveAmount,
+    AccountLocked,
     InsufficientFunds,
     TransactionDuplicated,
 }
