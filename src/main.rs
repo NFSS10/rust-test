@@ -1,4 +1,10 @@
+mod payment_engine;
+mod utils;
+
 use std::{env, process};
+
+use crate::payment_engine::types::TransactionRecord;
+use crate::utils::csv;
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -9,5 +15,13 @@ fn main() {
     }
 
     let file_path = &args[0];
-    println!("Processing file: {}", file_path);
+
+    let result = csv::with_csv_streaming::<TransactionRecord, _>(file_path, |record| {
+        println!("Processed record: {:?}", record);
+    });
+
+    if let Err(err) = result {
+        eprintln!("CSV error: {err}");
+        process::exit(1);
+    }
 }
