@@ -3,6 +3,8 @@ mod utils;
 
 use std::{env, process};
 
+use crate::payment_engine::PaymentsEngine;
+use crate::payment_engine::csv_utils::CsvTransactionRecord;
 use crate::payment_engine::types::TransactionRecord;
 use crate::utils::csv;
 
@@ -16,8 +18,20 @@ fn main() {
 
     let file_path = &args[0];
 
-    let result = csv::with_csv_streaming::<TransactionRecord, _>(file_path, |record| {
-        println!("Processed record: {:?}", record);
+    let mut engine = PaymentsEngine::new();
+    let result = csv::with_csv_streaming::<CsvTransactionRecord, _>(file_path, |raw| {
+        let record: TransactionRecord = match raw.try_into() {
+            Ok(r) => r,
+            Err(err) => {
+                eprintln!("Invalid CSV row: {err}");
+                process::exit(1);
+            }
+        };
+
+        engine.process_transaction(record).unwrap_or_else(|err| {
+            eprintln!("Error processing transaction: {err}");
+            process::exit(1);
+        });
     });
 
     if let Err(err) = result {

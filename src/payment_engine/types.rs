@@ -4,15 +4,13 @@ use serde::Deserialize;
 pub type ClientId = u16;
 pub type TransactionId = u32;
 
-#[derive(Debug, Deserialize)]
-pub struct TransactionRecord {
-    #[serde(rename = "type")]
-    pub transaction_type: TransactionType,
-    #[serde(rename = "client")]
-    pub client_id: ClientId,
-    #[serde(rename = "tx")]
-    pub transaction_id: TransactionId,
-    pub amount: Option<Decimal>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TransactionRecord {
+    Deposit { client_id: ClientId, transaction_id: TransactionId, amount: Decimal },
+    Withdrawal { client_id: ClientId, transaction_id: TransactionId, amount: Decimal },
+    Dispute { client_id: ClientId, transaction_id: TransactionId },
+    Resolve { client_id: ClientId, transaction_id: TransactionId },
+    Chargeback { client_id: ClientId, transaction_id: TransactionId },
 }
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
