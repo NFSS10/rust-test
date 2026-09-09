@@ -59,6 +59,7 @@ impl TransactionsRegistry {
         inserted
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, tx_id: TransactionId) -> Option<&Transaction> {
         self.transactions.get(&tx_id)
     }
