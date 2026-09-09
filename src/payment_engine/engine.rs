@@ -39,14 +39,48 @@ impl PaymentsEngine {
     }
 
     fn deposit(&mut self, client_id: ClientId, tx_id: TransactionId, amount: Decimal) -> Result<()> {
-        // TODO: implement
-        println!("Deposit: client_id={:?}, tx_id={:?}, amount={:?}", client_id, tx_id, amount);
+        // ignore non-positive deposits
+        if amount <= Decimal::ZERO {
+            return Ok(());
+        }
+
+        let account = self
+            .accounts
+            .get_mut(&client_id)
+            .ok_or_else(|| anyhow::anyhow!("Unexpected: account missing after `ensure_account()`"))?;
+
+        let new_amount =
+            account.available.checked_add(amount).ok_or_else(|| anyhow::anyhow!("Deposit failed: balance overflow"))?;
+        account.available = new_amount;
+
+        // TODO: register transaction so it can be disputed later?
+
         Ok(())
     }
 
     fn withdrawal(&mut self, client_id: ClientId, tx_id: TransactionId, amount: Decimal) -> Result<()> {
-        // TODO: implement
-        println!("Withdrawal: client_id={:?}, tx_id={:?}, amount={:?}", client_id, tx_id, amount);
+        // ignore non-positive deposits
+        if amount <= Decimal::ZERO {
+            return Ok(());
+        }
+
+        // no sufficient funds to withdraw
+        let account = self
+            .accounts
+            .get_mut(&client_id)
+            .ok_or_else(|| anyhow::anyhow!("Unexpected: account missing after `ensure_account()`"))?;
+        if account.available < amount {
+            return Ok(());
+        }
+
+        let new_amount = account
+            .available
+            .checked_sub(amount)
+            .ok_or_else(|| anyhow::anyhow!("Withdrawal failed: balance underflow"))?;
+        account.available = new_amount;
+
+        // TODO: register transaction so it can be disputed later?
+
         Ok(())
     }
 
