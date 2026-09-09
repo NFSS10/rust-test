@@ -3,7 +3,8 @@ use rust_decimal::Decimal;
 use rustc_hash::FxHashMap;
 
 use super::account::Account;
-use super::types::{ClientId, TransactionId, TransactionRecord};
+use super::errors::EngineError;
+use super::types::{ClientId, IgnoreReason, TransactionId, TransactionOutcome, TransactionRecord};
 
 pub struct PaymentsEngine {
     accounts: FxHashMap<ClientId, Account>,
@@ -13,7 +14,7 @@ impl PaymentsEngine {
         Self { accounts: FxHashMap::default() }
     }
 
-    pub fn process_transaction(&mut self, record: TransactionRecord) -> Result<()> {
+    pub fn process_transaction(&mut self, record: TransactionRecord) -> Result<TransactionOutcome> {
         // ensure the account exists before processing the transaction
         let client_id = match &record {
             TransactionRecord::Deposit { client_id, .. }
@@ -38,68 +39,59 @@ impl PaymentsEngine {
         }
     }
 
-    fn deposit(&mut self, client_id: ClientId, tx_id: TransactionId, amount: Decimal) -> Result<()> {
+    fn deposit(&mut self, client_id: ClientId, tx_id: TransactionId, amount: Decimal) -> Result<TransactionOutcome> {
         // ignore non-positive deposits
         if amount <= Decimal::ZERO {
-            return Ok(());
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::NonPositiveAmount));
         }
 
-        let account = self
-            .accounts
-            .get_mut(&client_id)
-            .ok_or_else(|| anyhow::anyhow!("Unexpected: account missing after `ensure_account()`"))?;
+        let account = self.accounts.get_mut(&client_id).ok_or(EngineError::MissingAccountAfterEnsure)?;
 
-        let new_amount =
-            account.available.checked_add(amount).ok_or_else(|| anyhow::anyhow!("Deposit failed: balance overflow"))?;
+        let new_amount = account.available.checked_add(amount).ok_or(EngineError::DepositOverflow)?;
         account.available = new_amount;
 
         // TODO: register transaction so it can be disputed later?
 
-        Ok(())
+        Ok(TransactionOutcome::Applied)
     }
 
-    fn withdrawal(&mut self, client_id: ClientId, tx_id: TransactionId, amount: Decimal) -> Result<()> {
+    fn withdrawal(&mut self, client_id: ClientId, tx_id: TransactionId, amount: Decimal) -> Result<TransactionOutcome> {
         // ignore non-positive deposits
         if amount <= Decimal::ZERO {
-            return Ok(());
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::NonPositiveAmount));
         }
+
+        let account = self.accounts.get_mut(&client_id).ok_or(EngineError::MissingAccountAfterEnsure)?;
 
         // no sufficient funds to withdraw
-        let account = self
-            .accounts
-            .get_mut(&client_id)
-            .ok_or_else(|| anyhow::anyhow!("Unexpected: account missing after `ensure_account()`"))?;
         if account.available < amount {
-            return Ok(());
+            return Ok(TransactionOutcome::Ignored(IgnoreReason::InsufficientFunds));
         }
 
-        let new_amount = account
-            .available
-            .checked_sub(amount)
-            .ok_or_else(|| anyhow::anyhow!("Withdrawal failed: balance underflow"))?;
+        let new_amount = account.available.checked_sub(amount).ok_or(EngineError::WithdrawalUnderflow)?;
         account.available = new_amount;
 
         // TODO: register transaction so it can be disputed later?
 
-        Ok(())
+        Ok(TransactionOutcome::Applied)
     }
 
-    fn dispute(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<()> {
+    fn dispute(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<TransactionOutcome> {
         // TODO: implement
         println!("Dispute: client_id={:?}, tx_id={:?}", client_id, tx_id);
-        Ok(())
+        Ok(TransactionOutcome::Applied)
     }
 
-    fn resolve(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<()> {
+    fn resolve(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<TransactionOutcome> {
         // TODO: implement
         println!("Resolve: client_id={:?}, tx_id={:?}", client_id, tx_id);
-        Ok(())
+        Ok(TransactionOutcome::Applied)
     }
 
-    fn chargeback(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<()> {
+    fn chargeback(&mut self, client_id: ClientId, tx_id: TransactionId) -> Result<TransactionOutcome> {
         // TODO: implement
         println!("Chargeback: client_id={:?}, tx_id={:?}", client_id, tx_id);
-        Ok(())
+        Ok(TransactionOutcome::Applied)
     }
 
     fn ensure_account(&mut self, client_id: ClientId) {

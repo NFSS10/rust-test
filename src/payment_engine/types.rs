@@ -22,3 +22,15 @@ pub enum TransactionType {
     Resolve,
     Chargeback,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionOutcome {
+    Applied,
+    Ignored(IgnoreReason),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IgnoreReason {
+    NonPositiveAmount,
+    InsufficientFunds,
+}
