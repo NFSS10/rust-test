@@ -41,3 +41,12 @@ pub enum IgnoreReason {
     WrongClient,
     NotDisputableType,
 }
+
+#[derive(Debug, Clone)]
+pub struct AccountSnapshot {
+    pub client_id: ClientId,
+    pub available: Decimal,
+    pub held: Decimal,
+    pub total: Decimal,
+    pub is_locked: bool,
+}

@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use super::account::Account;
 use super::errors::EngineError;
 use super::transactions_registry::{DisputeState, TransactionType as RegistryTxType, TransactionsRegistry};
-use super::types::{ClientId, IgnoreReason, TransactionId, TransactionOutcome, TransactionRecord};
+use super::types::{AccountSnapshot, ClientId, IgnoreReason, TransactionId, TransactionOutcome, TransactionRecord};
 
 pub struct PaymentsEngine {
     accounts: FxHashMap<ClientId, Account>,
@@ -39,6 +39,25 @@ impl PaymentsEngine {
             TransactionRecord::Resolve { client_id, transaction_id } => self.resolve(client_id, transaction_id),
             TransactionRecord::Chargeback { client_id, transaction_id } => self.chargeback(client_id, transaction_id),
         }
+    }
+
+    pub fn accounts_snapshot(&self) -> Vec<AccountSnapshot> {
+        let mut snapshots: Vec<AccountSnapshot> = self
+            .accounts
+            .iter()
+            .map(|(&client_id, account)| AccountSnapshot {
+                client_id,
+                available: account.available,
+                held: account.held,
+                total: account.total(),
+                is_locked: account.is_locked,
+            })
+            .collect();
+
+        // sort by client_id for consistent output
+        snapshots.sort_by_key(|snapshot| snapshot.client_id);
+
+        snapshots
     }
 
     fn deposit(&mut self, client_id: ClientId, tx_id: TransactionId, amount: Decimal) -> Result<TransactionOutcome> {
