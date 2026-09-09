@@ -37,6 +37,9 @@ A small transaction engine that reads CSV input, processes account operations, a
   - `transactions_registry.rs`
   - `account.rs`
 
+<img width="1406" height="818" alt="imagem" src="https://github.com/user-attachments/assets/203219c2-40cc-4c67-98a8-cdd1670de29f" />
+
+
 ## Safety and robustness
 
 - Checked arithmetic is used (`checked_add`, `checked_sub`) to avoid silent overflow/underflow;
