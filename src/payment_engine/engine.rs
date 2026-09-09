@@ -14,6 +14,17 @@ impl PaymentsEngine {
     }
 
     pub fn process_transaction(&mut self, record: TransactionRecord) -> Result<()> {
+        // ensure the account exists before processing the transaction
+        let client_id = match &record {
+            TransactionRecord::Deposit { client_id, .. }
+            | TransactionRecord::Withdrawal { client_id, .. }
+            | TransactionRecord::Dispute { client_id, .. }
+            | TransactionRecord::Resolve { client_id, .. }
+            | TransactionRecord::Chargeback { client_id, .. } => *client_id,
+        };
+        self.ensure_account(client_id);
+
+        // process the transaction based on its type
         match record {
             TransactionRecord::Deposit { client_id, transaction_id, amount } => {
                 self.deposit(client_id, transaction_id, amount)
@@ -55,5 +66,9 @@ impl PaymentsEngine {
         // TODO: implement
         println!("Chargeback: client_id={:?}, tx_id={:?}", client_id, tx_id);
         Ok(())
+    }
+
+    fn ensure_account(&mut self, client_id: ClientId) {
+        self.accounts.entry(client_id).or_insert_with(Account::new);
     }
 }
