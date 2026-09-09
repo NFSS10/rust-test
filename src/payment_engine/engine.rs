@@ -4,14 +4,16 @@ use rustc_hash::FxHashMap;
 
 use super::account::Account;
 use super::errors::EngineError;
+use super::transactions_registry::TransactionsRegistry;
 use super::types::{ClientId, IgnoreReason, TransactionId, TransactionOutcome, TransactionRecord};
 
 pub struct PaymentsEngine {
     accounts: FxHashMap<ClientId, Account>,
+    transactions_registry: TransactionsRegistry,
 }
 impl PaymentsEngine {
     pub fn new() -> Self {
-        Self { accounts: FxHashMap::default() }
+        Self { accounts: FxHashMap::default(), transactions_registry: TransactionsRegistry::new() }
     }
 
     pub fn process_transaction(&mut self, record: TransactionRecord) -> Result<TransactionOutcome> {
