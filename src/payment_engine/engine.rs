@@ -359,4 +359,265 @@ mod tests {
         assert_eq!(duplicate, TransactionOutcome::Ignored(IgnoreReason::TransactionDuplicated));
         assert_eq!(engine.accounts.get(&1).unwrap().available, d("9.0"));
     }
+
+    #[test]
+    fn dispute_ignores_transaction_not_found() {
+        let mut engine = PaymentsEngine::new();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 999 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::TransactionNotFound));
+    }
+
+    #[test]
+    fn dispute_ignores_wrong_client() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("2.0") })
+            .unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Dispute { client_id: 2, transaction_id: 1 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::WrongClient));
+    }
+
+    #[test]
+    fn dispute_ignores_already_disputed_transaction() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("2.0") })
+            .unwrap();
+
+        let first = engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 1 }).unwrap();
+
+        let second =
+            engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 1 }).unwrap();
+
+        assert_eq!(first, TransactionOutcome::Applied);
+        assert_eq!(second, TransactionOutcome::Ignored(IgnoreReason::TransactionAlreadyDisputed));
+    }
+
+    #[test]
+    fn dispute_ignores_not_disputable_type() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("5.0") })
+            .unwrap();
+
+        engine
+            .process_transaction(TransactionRecord::Withdrawal { client_id: 1, transaction_id: 2, amount: d("1.0") })
+            .unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 2 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::NotDisputableType));
+    }
+
+    #[test]
+    fn dispute_applies_and_moves_funds_to_held() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 10, amount: d("3.5") })
+            .unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 10 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Applied);
+        let account = engine.accounts.get(&1).unwrap();
+        assert_eq!(account.available, d("0.0"));
+        assert_eq!(account.held, d("3.5"));
+    }
+
+    #[test]
+    fn dispute_returns_error_on_overflow_in_held() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: Decimal::ONE })
+            .unwrap();
+
+        {
+            let account = engine.accounts.get_mut(&1).unwrap();
+            account.available = Decimal::ONE;
+            account.held = Decimal::MAX;
+        }
+
+        let err =
+            engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 1 }).unwrap_err();
+
+        let engine_err = err.downcast_ref::<EngineError>().unwrap();
+        assert_eq!(*engine_err, EngineError::DisputeOverflow);
+    }
+
+    #[test]
+    fn resolve_ignores_transaction_not_found() {
+        let mut engine = PaymentsEngine::new();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Resolve { client_id: 1, transaction_id: 999 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::TransactionNotFound));
+    }
+
+    #[test]
+    fn resolve_ignores_wrong_client() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("2.0") })
+            .unwrap();
+        engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 1 }).unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Resolve { client_id: 2, transaction_id: 1 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::WrongClient));
+    }
+
+    #[test]
+    fn resolve_ignores_transaction_not_in_dispute() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("2.0") })
+            .unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Resolve { client_id: 1, transaction_id: 1 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::TransactionNotInDispute));
+    }
+
+    #[test]
+    fn resolve_applies_and_releases_held_funds() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("2.0") })
+            .unwrap();
+        engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 1 }).unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Resolve { client_id: 1, transaction_id: 1 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Applied);
+        let account = engine.accounts.get(&1).unwrap();
+        assert_eq!(account.available, d("2.0"));
+        assert_eq!(account.held, d("0.0"));
+    }
+
+    #[test]
+    fn resolve_returns_error_on_overflow_in_available() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: Decimal::ONE })
+            .unwrap();
+        engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 1 }).unwrap();
+
+        {
+            let account = engine.accounts.get_mut(&1).unwrap();
+            account.held = Decimal::ONE;
+            account.available = Decimal::MAX;
+        }
+
+        let err =
+            engine.process_transaction(TransactionRecord::Resolve { client_id: 1, transaction_id: 1 }).unwrap_err();
+
+        let engine_err = err.downcast_ref::<EngineError>().unwrap();
+        assert_eq!(*engine_err, EngineError::DisputeOverflow);
+    }
+
+    #[test]
+    fn chargeback_ignores_transaction_not_found() {
+        let mut engine = PaymentsEngine::new();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Chargeback { client_id: 1, transaction_id: 999 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::TransactionNotFound));
+    }
+
+    #[test]
+    fn chargeback_ignores_wrong_client() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("2.0") })
+            .unwrap();
+        engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 1 }).unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Chargeback { client_id: 2, transaction_id: 1 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::WrongClient));
+    }
+
+    #[test]
+    fn chargeback_ignores_transaction_not_in_dispute() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("2.0") })
+            .unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Chargeback { client_id: 1, transaction_id: 1 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Ignored(IgnoreReason::TransactionNotInDispute));
+    }
+
+    #[test]
+    fn chargeback_applies_and_locks_account() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: d("2.0") })
+            .unwrap();
+        engine.process_transaction(TransactionRecord::Dispute { client_id: 1, transaction_id: 1 }).unwrap();
+
+        let outcome =
+            engine.process_transaction(TransactionRecord::Chargeback { client_id: 1, transaction_id: 1 }).unwrap();
+
+        assert_eq!(outcome, TransactionOutcome::Applied);
+
+        let account = engine.accounts.get(&1).unwrap();
+        assert_eq!(account.held, d("0.0"));
+        assert!(account.is_locked);
+
+        let tx = engine.transactions_registry.get(1).unwrap();
+        assert_eq!(tx.state, DisputeState::ChargedBack);
+    }
+
+    #[test]
+    fn chargeback_returns_error_on_held_underflow() {
+        let mut engine = PaymentsEngine::new();
+
+        engine
+            .process_transaction(TransactionRecord::Deposit { client_id: 1, transaction_id: 1, amount: Decimal::ONE })
+            .unwrap();
+
+        {
+            let tx = engine.transactions_registry.get_mut(1).unwrap();
+            tx.state = DisputeState::Disputed;
+        }
+        {
+            let account = engine.accounts.get_mut(&1).unwrap();
+            account.held = Decimal::MIN;
+        }
+
+        let err =
+            engine.process_transaction(TransactionRecord::Chargeback { client_id: 1, transaction_id: 1 }).unwrap_err();
+
+        let engine_err = err.downcast_ref::<EngineError>().unwrap();
+        assert_eq!(*engine_err, EngineError::DisputeUnderflow);
+    }
 }
